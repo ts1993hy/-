@@ -1,6 +1,6 @@
 # Java内存模型以及happens-before规则
 
-> https://www.jianshu.com/p/d52fea0d6ba5
+> 转载 https://www.jianshu.com/p/d52fea0d6ba5
 
 ## 引子
 
@@ -66,4 +66,43 @@ CPU的处理速度和主存的读写速度不是一个量级的，为了平衡�
 
 不过无论怎么重排序，程序的执行结果不能被改变。这就是`as-if-serial`，编译器、runtime和处理器都必须遵守as-if-serial语义。
 
-as-if-serial语义把单线程程序保护了起来，遵守as-if-serial语义的编译器，runtime和处理器为编写单线程程序的程序员创建了一个幻觉：单线程程序是按照程序的顺序来执行的。
+as-if-serial语义把单线程程序保护了起来，遵守as-if-serial语义的编译器，runtime和处理器为编写单线程程序的程序员创建了一个幻觉：单线程程序是按照程序的顺序来执行的。（`as-if-serial`为了单线程）
+
+### happens-before规则（为了多线程）
+
+如果一会是编译器重排序，一会是处理器重排序，那么程序员必须要去理解这些底层的实现以及具体规则，这样的话程序员的负担就太重了，严重影响了并发编程的效率。因此，JMM为程序员在上层提供了六条规则，这样我们就可以根据规则去推论跨线程的内存可见性，而不用再去理解底层重排序的规则。
+
+#### happens-before定义
+
+happens-before的概念最初由Leslie Lamport在其一篇影响深远的论文（《Time，Clocks and the Ordering of Events in a Distributed System》）中提出，有兴趣的可以google一下。JSR-133使用happens-before的概念来指定两个操作之间的执行顺序。由于这两个操作可以在一个线程之内，也可以是在不同线程之间。因此，JMM可以通过happens-before关系向程序员提供跨线程的内存可见性保证（如果A线程的写操作a与B线程的读操作b之间存在happens-before关系，尽管a操作和b操作在不同的线程中执行，但JMM向程序员保证a操作将对b操作可见）。具体的定义为：
+
+1. 如果一个操作happens-before另一个操作，那么第一个操作的执行结果将对第二个操作可见，而且第一个操作的执行顺序排在第二个操作之前。
+1. 两个操作之间存在happens-before关系，并不意味着Java平台的具体实现必须要按照happens-before关系指定的顺序来执行。如果重排序之后的执行结果，与按happens-before关系来执行的结果一致，那么这种重排序并不非法（也就是说，JMM允许这种重排序）。
+
+#### 具体规则
+
+1. 程序顺序规则：一个线程中的每个操作，happens-before于该线程中的任意后续操作。
+1. 监视器锁规则：对一个锁的解锁，happen-before于随后对这个锁的加锁。
+1. volatile变量规则：对一个volatile域的写，happen-before于任意后续对这个volatile域的读。
+1. 传递性：如果A happens-before B，且B happens-before C，那么A happen-before C。
+1. start()规则：如果线程A执行操作ThreadB.start()（启动线程B），那么A线程的ThreadB.start()操作happens-before于线程B中的任意操作。
+1. join()规则：如果线程A执行操作ThreadB.join()并成功返回，那么线程B中的任意操作happens-before于线程A从ThreadB.join()操作成功返回。
+1. 程序中断规则：对线程interrupted()方法的调用先行于被中断线程的代码检测到中断时间的发生。
+1. 对象finalize规则：一个对象的初始化完成（构造函数执行结束）先行于发生它的finalize()方法的开始。
+
+### 总结
+
+#### JMM的设计
+
+![JMM层级图](images/JMM层级图.png)
+
+JMM是语言级的内存模型，JMM包含了两个方面：
+
+1. 内存模型
+1. 重排序以及happens-before规则。同时为了禁止特定类型的重排序会对编译器和处理器指令序列加以控制。在上层有基于JMM的关键字和java.util.current包下的一些具体类用来方便程序员能够高效率的进行并发编程。
+
+##### JMM的设计图
+![JMM的设计图](JMM的设计图.png)
+
+1. JMM向程序员提供的happens-before规则能满足程序员的需求。JMM的happens-before规则不但简单易懂，而且也向程序员提供了足够强的内存可见性保证（有些内存可见性保证其实并不一定真实存在，比如上面的A happens-before B）。
+1. JMM对编译器和处理器的束缚已经尽可能少。从上面的分析可以看出，JMM其实是在遵循一个基本原则：只要不改变程序的执行结果（指的是单线程程序和正确同步的多线程程序），编译器和处理器怎么优化都行。例如，如果编译器经过细致的分析后，认定一个锁只会被单个线程访问，那么这个锁可以被消除。再如，如果编译器经过细致的分析后，认定一个volatile变量只会被单个线程访问，那么编译器可以把这个volatile变量当作一个普通变量来对待。这些优化既不会改变程序的执行结果，又能提高程序的执行效率。
